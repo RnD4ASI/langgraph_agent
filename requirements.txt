@@ -1,0 +1,8 @@
+langchain-core>=0.1.4
+langchain-openai>=0.0.5
+langgraph>=0.0.15
+openai>=1.10.0
+duckduckgo-search>=4.1.1
+beautifulsoup4>=4.12.2
+requests>=2.31.0
+python-dotenv>=1.0.0
