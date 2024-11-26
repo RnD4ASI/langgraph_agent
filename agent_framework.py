@@ -12,7 +12,7 @@ Key Components:
 4. State Management: Built-in state tracking and checkpointing
 """
 
-from typing import Dict, List, Optional, Any, Callable, TypedDict, Annotated, Union
+from typing import Dict, List, Optional, Any, Callable, TypedDict, Annotated, Union, Literal
 from enum import Enum
 import operator
 from uuid import uuid4
@@ -27,7 +27,10 @@ from langchain_core.messages import (
     FunctionMessage,
 )
 from langchain_core.tools import BaseTool
+from langchain_core.language_models.base import BaseLanguageModel
 from langchain_openai import ChatOpenAI
+from langchain_community.llms import HuggingFacePipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite import SqliteSaver
 
@@ -87,7 +90,7 @@ class AgentConfig:
         role: Agent's role in the workflow (from AgentRole enum)
         system_message: Instructions/context for the agent's behavior
         tools: Optional list of tools available to the agent
-        model: Language model to use (defaults to gpt-3.5-turbo)
+        model_config: Configuration for the language model
         temperature: Creativity vs determinism setting (0-1)
         custom_functions: Additional functions for specialized behavior
     """
@@ -95,7 +98,10 @@ class AgentConfig:
     role: AgentRole
     system_message: str
     tools: List[BaseTool] = field(default_factory=list)
-    model: str = "gpt-3.5-turbo"
+    model_config: Dict[str, Any] = field(default_factory=lambda: {
+        "type": "openai",
+        "name": "gpt-3.5-turbo"
+    })
     temperature: float = 0.7
     custom_functions: Dict[str, Callable] = field(default_factory=dict)
 
@@ -109,6 +115,46 @@ class AgentState(TypedDict):
     """
     messages: Annotated[list[AnyMessage], reduce_messages]
     metadata: Dict[str, Any]
+
+def create_llm(model_config: Dict[str, Any], temperature: float) -> BaseLanguageModel:
+    """
+    Create a language model based on configuration.
+    
+    Args:
+        model_config: Dictionary containing model configuration
+        temperature: Temperature setting for the model
+        
+    Returns:
+        Configured language model instance
+    """
+    model_type = model_config.get("type", "openai")
+    model_name = model_config.get("name", "gpt-3.5-turbo")
+    
+    if model_type == "openai":
+        return ChatOpenAI(
+            model=model_name,
+            temperature=temperature
+        )
+    elif model_type == "huggingface":
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            device_map="auto",
+            load_in_8bit=True  # For memory efficiency
+        )
+        
+        pipe = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tokenizer,
+            max_length=2048,
+            temperature=temperature,
+            top_p=0.95,
+        )
+        
+        return HuggingFacePipeline(pipeline=pipe)
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
 
 class BaseAgent(ABC):
     """
@@ -128,9 +174,9 @@ class BaseAgent(ABC):
             config: AgentConfig instance with agent settings
         """
         self.config = config
-        self.llm = ChatOpenAI(
-            model=config.model,
-            temperature=config.temperature
+        self.llm = create_llm(
+            config.model_config,
+            config.temperature
         ).bind_tools(config.tools)
         
     @abstractmethod
@@ -345,7 +391,7 @@ class MultiAgentWorkflow:
 def create_single_agent(
     system_message: str,
     tools: List[BaseTool] = None,
-    model: str = "gpt-3.5-turbo"
+    model_config: Dict[str, Any] = None
 ) -> SingleAgent:
     """
     Helper function to create a single agent with basic configuration.
@@ -353,7 +399,7 @@ def create_single_agent(
     Args:
         system_message: Instructions for the agent
         tools: Optional list of tools
-        model: Language model to use
+        model_config: Optional model configuration
         
     Returns:
         Configured SingleAgent instance
@@ -363,7 +409,10 @@ def create_single_agent(
         role=AgentRole.EXECUTOR,
         system_message=system_message,
         tools=tools or [],
-        model=model
+        model_config=model_config or {
+            "type": "openai",
+            "name": "gpt-3.5-turbo"
+        }
     )
     return SingleAgent(config)
 
