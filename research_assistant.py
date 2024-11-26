@@ -12,6 +12,7 @@ Key Components:
 - Web search tool using DuckDuckGo
 - Content scraping tool with BeautifulSoup
 - Research agent with comprehensive system message
+- Support for both OpenAI and HuggingFace models
 """
 
 from typing import List
@@ -121,11 +122,30 @@ def main():
     4. Execute research workflow
     5. Display results
     """
-    # Step 5: Create the research agent
+    # Example configurations for different models
+    openai_config = {
+        "type": "openai",
+        "name": "gpt-3.5-turbo"
+    }
+    
+    huggingface_config = {
+        "type": "huggingface",
+        "name": "mistralai/Mistral-7B-Instruct-v0.1"  # You can change this to any HF model
+    }
+    
+    # Let user choose the model
+    print("Choose your model:")
+    print("1. OpenAI GPT-3.5")
+    print("2. Mistral-7B (HuggingFace)")
+    choice = input("Enter 1 or 2: ")
+    
+    model_config = openai_config if choice == "1" else huggingface_config
+    
+    # Step 5: Create the research agent with chosen model
     agent = create_single_agent(
         system_message=system_message,
         tools=[search_tool, scrape_tool],
-        model="gpt-3.5-turbo"
+        model_config=model_config  # Pass the selected model configuration
     )
     
     # Step 6: Define example research questions
@@ -135,13 +155,12 @@ def main():
         "What are the health benefits and risks of intermittent fasting?",
     ]
     
-    # Step 7: Set up the interactive interface
-    print("Research Assistant Demo")
+    print("\nResearch Assistant Demo")
     print("Available questions:")
     for i, q in enumerate(questions, 1):
         print(f"{i}. {q}")
     
-    # Step 8: Get user input
+    # Step 7: Get user input
     choice = input("\nSelect a question number or type your own question: ")
     try:
         question = questions[int(choice) - 1] if choice.isdigit() and 1 <= int(choice) <= len(questions) else choice
@@ -150,13 +169,13 @@ def main():
     
     print(f"\nResearching: {question}\n")
     
-    # Step 9: Execute the research workflow
+    # Step 8: Execute the research workflow
     result = agent.graph.invoke({
         "messages": [HumanMessage(content=question)],
         "metadata": {"max_turns": 5}  # Limit iterations to prevent infinite loops
     })
     
-    # Step 10: Display the research results
+    # Step 9: Display the research results
     final_message = result["messages"][-1]
     print("\nResearch Summary:")
     print("-" * 80)
